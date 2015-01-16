@@ -52,9 +52,10 @@ func (s *Store) Create(name string, driverName string, flags drivers.DriverOptio
 		return host, err
 	}
 
-	if err := host.Create(); err != nil {
+	if err := host.Create(name); err != nil {
 		return host, err
 	}
+
 	return host, nil
 }
 
@@ -63,6 +64,7 @@ func (s *Store) Remove(name string, force bool) error {
 	if err != nil {
 		return err
 	}
+
 	if active != nil && active.Name == name {
 		if err := s.RemoveActive(); err != nil {
 			return err

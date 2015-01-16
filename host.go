@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -33,8 +34,21 @@ type hostConfig struct {
 	DriverName string
 }
 
+func waitForDocker(addr string) error {
+	for {
+		conn, err := net.DialTimeout("tcp", addr, time.Second*5)
+		if err != nil {
+			time.Sleep(time.Second * 5)
+			continue
+		}
+		conn.Close()
+		break
+	}
+	return nil
+}
+
 func NewHost(name, driverName, storePath string) (*Host, error) {
-	driver, err := drivers.NewDriver(driverName, storePath)
+	driver, err := drivers.NewDriver(driverName, name, storePath)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +170,10 @@ func (h *Host) addHostToKnownHosts() error {
 
 	tlsConfig.InsecureSkipVerify = true
 
+	log.Debugf("waiting for Docker to become available on %s", addr)
+	if err := waitForDocker(addr); err != nil {
+		return fmt.Errorf("unable to connect to Docker daemon: %s", err)
+	}
 	testConn, err := tls.Dial(proto, addr, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("tls Handshake error: %s", err)
@@ -197,7 +215,7 @@ func (h *Host) addHostToKnownHosts() error {
 	return nil
 }
 
-func (h *Host) Create() error {
+func (h *Host) Create(name string) error {
 	if err := h.Driver.Create(); err != nil {
 		return err
 	}
@@ -275,7 +293,7 @@ func (h *Host) LoadConfig() error {
 		return err
 	}
 
-	driver, err := drivers.NewDriver(config.DriverName, h.storePath)
+	driver, err := drivers.NewDriver(config.DriverName, h.Name, h.storePath)
 	if err != nil {
 		return err
 	}

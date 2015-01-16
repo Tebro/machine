@@ -107,6 +107,7 @@ Options:
  - `--amazonec2-region`: The region to use when launching the instance.  Default: `us-east-1`
  - `--amazonec2-root-size`: The root disk size of the instance (in GB).  Default: `16`
  - `--amazonec2-secret-key`: Your secret access key for the Amazon Web Services API.
+ - `--amazonec2-session-token`: Your session token for the Amazon Web Services API.
  - `--amazonec2-vpc-id`: Your VPC ID to launch the instance in.
  - `--amazonec2-zone`: The AWS zone launch the instance in (i.e. one of a,b,c,d,e).
 
@@ -128,7 +129,7 @@ Options:
 
 Creates machines locally on [VMware Fusion](http://www.vmware.com/products/fusion). Requires VMware Fusion to be installed.
 
-Options: 
+Options:
 
  - `--vmwarefusion-boot2docker-url`: URL for boot2docker image.
  - `--vmwarefusion-disk-size`: Size of disk for host VM (in MB). Default: `20000`
@@ -155,7 +156,7 @@ Options:
  - `--vmwarevcloudair-publicip`: Org Public IP to use.
  - `--vmwarevcloudair-ssh-port`: SSH port. Default: `22`
  - `--vmwarevcloudair-vdcid`: Virtual Data Center ID.
-   
+
 ### VMware vSphere
 
 Creates machines on a [VMware vSphere](http://www.vmware.com/products/vsphere) Virtual Infrastructure. Requires a working vSphere (ESXi and optionally vCenter) installation. The vSphere driver depends on [`govc`](https://github.com/vmware/govmomi/tree/master/govc) (must be in path) and has been tested with [vmware/govmomi@`c848630`](https://github.com/vmware/govmomi/commit/c8486300bfe19427e4f3226e3b3eac067717ef17).
@@ -174,6 +175,78 @@ Options:
  - `--vmwarevsphere-network`: Network where the Docker VM will be attached.
  - `--vmwarevsphere-pool`: Resource pool for Docker VM.
  - `--vmwarevsphere-vcenter`: IP/hostname for vCenter (or ESXi if connecting directly to a single host).
+
+### OpenStack
+
+Create machines on [Openstack](http://www.openstack.org/software/)
+
+Mandatory:
+
+ - `--openstack-flavor-id`: The flavor ID to use when creating the machine
+ - `--openstack-image-id`: The image ID to use when creating the machine.
+
+Options:
+
+ - `--openstack-auth-url`: Keystone service base URL.
+ - `--openstack-username`: User identifer to authenticate with.
+ - `--openstack-password`: User password. It can be omitted if the standard environment variable `OS_PASSWORD` is set.
+ - `--openstack-tenant-name` or `--openstack-tenant-id`: Identify the tenant in which the machine will be created.
+ - `--openstack-region`: The region to work on. Can be omitted if there is ony one region on the OpenStack.
+ - `--openstack-endpoint-type`: Endpoint type can be `internalURL`, `adminURL` on `publicURL`. If is a helper for the driver
+   to choose the right URL in the OpenStack service catalog. If not provided the default id `publicURL`
+ - `--openstack-net-id`: The private network id the machine will be connected on. If your OpenStack project project
+   contains only one private network it will be use automatically.
+ - `--openstack-sec-groups`: If security groups are available on your OpenStack you can specify a comma separated list
+   to use for the machine (e.g. `secgrp001,secgrp002`).
+ - `--openstack-floatingip-pool`: The IP pool that will be used to get a public IP an assign it to the machine. If there is an
+   IP address already allocated but not assigned to any machine, this IP will be chosen and assigned to the machine. If
+   there is no IP address already allocated a new IP will be allocated and assigned to the machine.
+ - `--openstack-ssh-user`: The username to use for SSH into the machine. If not provided `root` will be used.
+ - `--openstack-ssh-port`: Customize the SSH port if the SSH server on the machine does not listen on the default port.
+ - `--openstack-docker-install`: Boolean flag to indicate if docker have to be installed on the machine. Useful when
+   docker is already installed and configured in the OpenStack image. Default set to `true`
+
+Environment variables:
+
+Here comes the list of the supported variables with the corresponding options. If both environment variable
+and CLI option are provided the CLI option takes the precedence.
+
+| Environment variable | CLI option                  |
+|----------------------|-----------------------------|
+| `OS_AUTH_URL`        | `--openstack-auth-url`      |
+| `OS_USERNAME`        | `--openstack-username`      |
+| `OS_PASSWORD`        | `--openstack-password`      |
+| `OS_TENANT_NAME`     | `--openstack-tenant-name`   |
+| `OS_TENANT_ID`       | `--openstack-tenant-id`     |
+| `OS_REGION_NAME`     | `--openstack-region`        |
+| `OS_ENDPOINT_TYPE`   | `--openstack-endpoint-type` |
+
+### Rackspace
+
+Create machines on [Rackspace cloud](http://www.rackspace.com/cloud)
+
+Options:
+
+ - `--rackspace-username`: Rackspace account username
+ - `--rackspace-api-key`: Rackspace API key
+ - `--rackspace-region`: Rackspace region name
+ - `--rackspace-endpoint-type`: Rackspace endpoint type (adminURL, internalURL or the default publicURL)
+ - `--rackspace-image-id`: Rackspace image ID. Default: Ubuntu 14.10 (Utopic Unicorn) (PVHVM)
+ - `--rackspace-flavor-id`: Rackspace flavor ID. Default: General Purpose 1GB
+ - `--rackspace-ssh-user`: SSH user for the newly booted machine. Set to root by default
+ - `--rackspace-ssh-port`: SSH port for the newly booted machine. Set to 22 by default
+
+Environment variables:
+
+Here comes the list of the supported variables with the corresponding options. If both environment
+variable and CLI option are provided the CLI option takes the precedence.
+
+| Environment variable | CLI option                  |
+|----------------------|-----------------------------|
+| `OS_USERNAME`        | `--rackspace-username`      |
+| `OS_API_KEY`         | `--rackspace-ap-key`        |
+| `OS_REGION_NAME`     | `--rackspace-region`        |
+| `OS_ENDPOINT_TYPE`   | `--rackspace-endpoint-type` |
 
 ## Contributing
 
@@ -215,9 +288,9 @@ There is a suite of integration tests that will run for the drivers.  In order
 to use these you must export the corresponding environment variables for each
 driver as these perform the actual actions (start, stop, restart, kill, etc).
 
-By default, the suite will run tests against all drivers in master.  You can 
+By default, the suite will run tests against all drivers in master.  You can
 override this by setting the environment variable `MACHINE_TESTS`.  For example,
-`MACHINE_TESTS="virtualbox" ./script/run-integration-tests` will only run the 
+`MACHINE_TESTS="virtualbox" ./script/run-integration-tests` will only run the
 virtualbox driver integration tests.
 
 To run, use the helper script `./script/run-integration-tests`.

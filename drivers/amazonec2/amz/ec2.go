@@ -149,9 +149,11 @@ func (e *EC2) awsApiCall(v url.Values) (http.Response, error) {
 		return http.Response{}, fmt.Errorf("error creating request from client")
 	}
 	req.Header.Add("Content-type", "application/json")
-	awsauth.Sign(req, awsauth.Credentials{
+
+	awsauth.Sign4(req, awsauth.Credentials{
 		AccessKeyID:     e.Auth.AccessKey,
 		SecretAccessKey: e.Auth.SecretKey,
+		SecurityToken:   e.Auth.SessionToken,
 	})
 	resp, err := client.Do(req)
 	if err != nil {
@@ -269,6 +271,34 @@ func (e *EC2) ImportKeyPair(name, publicKey string) error {
 	unmarshalledResponse := ImportKeyPairResponse{}
 	if xml.Unmarshal(contents, &unmarshalledResponse); err != nil {
 		return fmt.Errorf("Error unmarshalling AWS response XML: %s", err)
+	}
+
+	return nil
+}
+
+func (e *EC2) CreateTags(id string, tags map[string]string) error {
+	v := url.Values{}
+	v.Set("Action", "CreateTags")
+	v.Set("ResourceId.1", id)
+
+	counter := 1
+	for k, val := range tags {
+		v.Set(fmt.Sprintf("Tag.%d.Key", counter), k)
+		v.Set(fmt.Sprintf("Tag.%d.Value", counter), val)
+
+		counter += 1
+	}
+
+	resp, err := e.awsApiCall(v)
+	defer resp.Body.Close()
+	if err != nil {
+		return err
+	}
+
+	createTagsResponse := &CreateTagsResponse{}
+
+	if err := getDecodedResponse(resp, &createTagsResponse); err != nil {
+		return fmt.Errorf("Error decoding create tags response: %s", err)
 	}
 
 	return nil

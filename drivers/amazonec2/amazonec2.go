@@ -33,6 +33,7 @@ type Driver struct {
 	Id              string
 	AccessKey       string
 	SecretKey       string
+	SessionToken    string
 	Region          string
 	AMI             string
 	SSHKeyID        int
@@ -40,6 +41,7 @@ type Driver struct {
 	InstanceId      string
 	InstanceType    string
 	IPAddress       string
+	MachineName     string
 	SecurityGroupId string
 	ReservationId   string
 	RootSize        int64
@@ -80,6 +82,12 @@ func GetCreateFlags() []cli.Flag {
 			Usage:  "AWS Secret Key",
 			Value:  "",
 			EnvVar: "AWS_SECRET_ACCESS_KEY",
+		},
+		cli.StringFlag{
+			Name:   "amazonec2-session-token",
+			Usage:  "AWS Session Token",
+			Value:  "",
+			EnvVar: "AWS_SESSION_TOKEN",
 		},
 		cli.StringFlag{
 			Name:   "amazonec2-ami",
@@ -126,14 +134,15 @@ func GetCreateFlags() []cli.Flag {
 	}
 }
 
-func NewDriver(storePath string) (drivers.Driver, error) {
+func NewDriver(machineName string, storePath string) (drivers.Driver, error) {
 	id := generateId()
-	return &Driver{Id: id, storePath: storePath}, nil
+	return &Driver{Id: id, MachineName: machineName, storePath: storePath}, nil
 }
 
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.AccessKey = flags.String("amazonec2-access-key")
 	d.SecretKey = flags.String("amazonec2-secret-key")
+	d.SessionToken = flags.String("amazonec2-session-token")
 	d.AMI = flags.String("amazonec2-ami")
 	d.Region = flags.String("amazonec2-region")
 	d.InstanceType = flags.String("amazonec2-instance-type")
@@ -173,7 +182,7 @@ func (d *Driver) Create() error {
 
 	group, err := d.createSecurityGroup()
 	if err != nil {
-		return err
+		log.Fatalf("Please make sure you don't have a security group named: %s", d.MachineName)
 	}
 
 	bdm := &amz.BlockDeviceMapping{
@@ -221,15 +230,39 @@ func (d *Driver) Create() error {
 		d.InstanceId,
 		d.IPAddress)
 
-	log.Infof("Waiting for SSH...")
+	log.Infof("Waiting for SSH on %s:%d", d.IPAddress, 22)
 
 	if err := ssh.WaitForTCP(fmt.Sprintf("%s:%d", d.IPAddress, 22)); err != nil {
 		return err
 	}
 
+	log.Debug("Settings tags for instance")
+	tags := map[string]string{
+		"Name": d.MachineName,
+	}
+
+	if err = d.getClient().CreateTags(d.InstanceId, tags); err != nil {
+		return err
+	}
+
+	log.Debugf("Setting hostname: %s", d.MachineName)
+	cmd, err := d.GetSSHCommand(fmt.Sprintf(
+		"echo \"127.0.0.1 %s\" | sudo tee -a /etc/hosts && sudo hostname %s && echo \"%s\" | sudo tee /etc/hostname",
+		d.MachineName,
+		d.MachineName,
+		d.MachineName,
+	))
+
+	if err != nil {
+		return err
+	}
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
 	log.Debugf("Installing Docker")
 
-	cmd, err := d.GetSSHCommand("if [ ! -e /usr/bin/docker ]; then curl get.docker.io | sudo sh -; fi")
+	cmd, err = d.GetSSHCommand("if [ ! -e /usr/bin/docker ]; then curl get.docker.io | sudo sh -; fi")
 	if err != nil {
 		return err
 	}
@@ -424,7 +457,7 @@ func (d *Driver) GetSSHCommand(args ...string) (*exec.Cmd, error) {
 }
 
 func (d *Driver) getClient() *amz.EC2 {
-	auth := amz.GetAuth(d.AccessKey, d.SecretKey)
+	auth := amz.GetAuth(d.AccessKey, d.SecretKey, d.SessionToken)
 	return amz.NewEC2(auth, d.Region)
 }
 
@@ -485,7 +518,7 @@ func (d *Driver) createKeyPair() error {
 		return err
 	}
 
-	keyName := fmt.Sprintf("docker-machine-%s", d.Id)
+	keyName := d.MachineName
 
 	log.Debugf("creating key pair: %s", keyName)
 
@@ -513,7 +546,7 @@ func (d *Driver) terminate() error {
 func (d *Driver) createSecurityGroup() (*amz.SecurityGroup, error) {
 	log.Debugf("creating security group in %s", d.VpcId)
 
-	grpName := fmt.Sprintf("docker-machine-%s", d.Id)
+	grpName := d.MachineName
 	group, err := d.getClient().CreateSecurityGroup(grpName, "Docker Machine", d.VpcId)
 	if err != nil {
 		return nil, err

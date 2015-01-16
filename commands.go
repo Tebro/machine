@@ -18,6 +18,8 @@ import (
 	_ "github.com/docker/machine/drivers/digitalocean"
 	_ "github.com/docker/machine/drivers/google"
 	_ "github.com/docker/machine/drivers/none"
+	_ "github.com/docker/machine/drivers/openstack"
+	_ "github.com/docker/machine/drivers/rackspace"
 	_ "github.com/docker/machine/drivers/virtualbox"
 	_ "github.com/docker/machine/drivers/vmwarefusion"
 	_ "github.com/docker/machine/drivers/vmwarevcloudair"
@@ -191,6 +193,17 @@ func cmdCreate(c *cli.Context) {
 		log.Fatal("You must specify a machine name")
 	}
 
+	store := NewStore(c.GlobalString("storage-path"))
+
+	exists, err := store.Exists(name)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if exists {
+		log.Fatal("There's already a machine with the same name")
+	}
+
 	keyExists, err := drivers.PublicKeyExists()
 	if err != nil {
 		log.Fatal(err)
@@ -199,8 +212,6 @@ func cmdCreate(c *cli.Context) {
 	if !keyExists {
 		log.Fatalf("Identity authentication public key doesn't exist at %q. Create your public key by running the \"docker\" command.", drivers.PublicKeyPath())
 	}
-
-	store := NewStore(c.GlobalString("storage-path"))
 
 	host, err := store.Create(name, driver, c)
 	if err != nil {
@@ -267,6 +278,15 @@ func cmdLs(c *cli.Context) {
 
 	for _, host := range hostList {
 		if !quiet {
+			tmpHost, err := store.GetActive()
+			if err != nil {
+				log.Errorf("There's a problem with the active host: %s", err)
+			}
+
+			if tmpHost == nil {
+				log.Errorf("There's a problem finding the active host")
+			}
+
 			go getHostState(host, *store, hostListItems)
 		} else {
 			fmt.Fprintf(w, "%s\n", host.Name)
@@ -422,6 +442,10 @@ func getHost(c *cli.Context) *Host {
 		if err != nil {
 			log.Fatalf("unable to get active host: %v", err)
 		}
+
+		if host == nil {
+			log.Fatal("unable to get active host, active file not found")
+		}
 		return host
 	}
 
@@ -449,7 +473,7 @@ func getHostState(host Host, store Store, hostListItems chan<- hostListItem) {
 
 	isActive, err := store.IsActive(&host)
 	if err != nil {
-		log.Errorf("error determining whether host %q is active: %s",
+		log.Debugf("error determining whether host %q is active: %s",
 			host.Name, err)
 	}
 
